@@ -14,7 +14,7 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Hardcoded MongoDB Connection (⚠️ Only for development)
+// MongoDB URI (Keep this secret in env file in production)
 const MONGODB_URI = 'mongodb+srv://solankivinubhai971:rk3NzXFgcE0kn2l7@viewcount.duvwdit.mongodb.net/viewCounterDB?retryWrites=true&w=majority&appName=viewCount';
 
 mongoose.connect(MONGODB_URI)
@@ -26,20 +26,20 @@ mongoose.connect(MONGODB_URI)
 
 // Schema and Model
 const viewCountSchema = new mongoose.Schema({
-  animeId: { 
-    type: String, 
-    required: true, 
+  animeId: {
+    type: String,
+    required: true,
     unique: true,
-    index: true 
+    index: true
   },
-  count: { 
-    type: Number, 
-    default: 0,
-    min: 0 
+  count: {
+    type: Number,
+    default: 1, // Default to 1 if document is newly created
+    min: 1      // Prevent 0 views
   },
-  lastUpdated: { 
-    type: Date, 
-    default: Date.now 
+  lastUpdated: {
+    type: Date,
+    default: Date.now
   }
 }, { timestamps: true });
 
@@ -51,21 +51,23 @@ const activeSubscriptions = new Map();
 
 wss.on('connection', (ws) => {
   console.log('New WebSocket connection');
-  
+
   ws.on('message', async (message) => {
     try {
       const { animeId, type } = JSON.parse(message);
-      
+
       if (type === 'subscribe' && animeId) {
-        // Add to subscriptions
         if (!activeSubscriptions.has(animeId)) {
           activeSubscriptions.set(animeId, new Set());
         }
         activeSubscriptions.get(animeId).add(ws);
-        
-        // Send current count
-        const doc = await ViewCount.findOne({ animeId }) || 
-                   await ViewCount.create({ animeId });
+
+        // Always fetch current count (or create with count = 1)
+        let doc = await ViewCount.findOne({ animeId });
+        if (!doc) {
+          doc = await ViewCount.create({ animeId });
+        }
+
         ws.send(JSON.stringify({
           type: 'viewCount',
           animeId,
@@ -73,43 +75,52 @@ wss.on('connection', (ws) => {
         }));
       }
     } catch (err) {
-      console.error('WS message error:', err);
+      console.error('WebSocket message error:', err);
     }
   });
 
   ws.on('close', () => {
-    activeSubscriptions.forEach((sockets, animeId) => {
-      sockets.delete(ws);
-      if (sockets.size === 0) {
+    for (const [animeId, clients] of activeSubscriptions.entries()) {
+      clients.delete(ws);
+      if (clients.size === 0) {
         activeSubscriptions.delete(animeId);
       }
-    });
+    }
   });
 });
 
-// API Endpoints
+// Track View API
 app.post('/track-view', async (req, res) => {
   try {
     const { animeId } = req.body;
-    
+
     if (!animeId || typeof animeId !== 'string') {
       return res.status(400).json({ error: 'Valid animeId required' });
     }
 
     const result = await ViewCount.findOneAndUpdate(
       { animeId },
-      { $inc: { count: 1 }, $set: { lastUpdated: new Date() } },
-      { new: true, upsert: true }
+      {
+        $inc: { count: 1 },
+        $set: { lastUpdated: new Date() }
+      },
+      {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true
+      }
     );
 
-    // Broadcast update
-    if (activeSubscriptions.has(animeId)) {
-      const message = JSON.stringify({
-        type: 'viewCount',
-        animeId,
-        count: result.count
-      });
-      activeSubscriptions.get(animeId).forEach(client => {
+    // WebSocket broadcast
+    const message = JSON.stringify({
+      type: 'viewCount',
+      animeId,
+      count: result.count
+    });
+
+    const clients = activeSubscriptions.get(animeId);
+    if (clients) {
+      clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
           client.send(message);
         }
@@ -118,23 +129,30 @@ app.post('/track-view', async (req, res) => {
 
     res.json({ success: true, count: result.count });
   } catch (err) {
-    console.error('Tracking error:', err);
+    console.error('Error tracking view:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
+// View Count GET
 app.get('/view-count/:animeId', async (req, res) => {
   try {
-    const doc = await ViewCount.findOne({ animeId: req.params.animeId });
-    res.json({ count: doc?.count || 0 });
+    const { animeId } = req.params;
+    const doc = await ViewCount.findOne({ animeId });
+
+    if (doc && doc.count > 0) {
+      res.json({ count: doc.count });
+    } else {
+      res.json({ count: 0 });
+    }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Root endpoint
+// Root health check
 app.get('/', (req, res) => {
-  res.json({ 
+  res.json({
     status: 'running',
     message: 'Anime View Counter API',
     stats: {
@@ -145,13 +163,13 @@ app.get('/', (req, res) => {
 });
 
 // Start server
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`WebSocket running on ws://localhost:${PORT}`);
+  console.log(`WebSocket running on http://localhost:${PORT}`);
 });
 
-// Create indexes on startup
+// Ensure DB indexes exist
 ViewCount.createIndexes()
   .then(() => console.log('Database indexes created'))
   .catch(err => console.error('Index creation error:', err));
