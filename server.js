@@ -4,7 +4,6 @@ const WebSocket = require('ws');
 const http = require('http');
 const cors = require('cors');
 
-<<<<<<< HEAD
 // Create Express app and HTTP server
 const app = express();
 const server = http.createServer(app);
@@ -38,38 +37,14 @@ wss.on('connection', (ws, req) => {
       
       if (type === 'subscribe' && animeId) {
         // Send current count immediately
-=======
-// 1. Create server
-const app = express();
-const server = http.createServer(app);
-
-// 2. Add middleware FIRST
-app.use(express.json());
-
-// 3. Create WebSocket server
-const wss = new WebSocket.Server({ server });
-const viewCounts = {};
-
-// 4. WebSocket connection
-wss.on('connection', (ws) => {
-  ws.on('message', (message) => {
-    try {
-      const { animeId, type } = JSON.parse(message);
-      if (type === 'subscribe') {
->>>>>>> 453bf59dc489557ed6652eb62beb8c83261ae7cb
         ws.send(JSON.stringify({
           type: 'viewCount',
           animeId,
           count: viewCounts[animeId] || 0
         }));
       }
-<<<<<<< HEAD
     } catch (error) {
       console.error('Invalid WebSocket message:', error);
-=======
-    } catch (e) {
-      console.log('Invalid message format');
->>>>>>> 453bf59dc489557ed6652eb62beb8c83261ae7cb
     }
   });
 
@@ -78,7 +53,6 @@ wss.on('connection', (ws) => {
   });
 });
 
-<<<<<<< HEAD
 // API Endpoints
 app.post('/track-view', (req, res) => {
   try {
@@ -131,46 +105,3 @@ server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`WebSocket server running on ws://localhost:${PORT}`);
 });
-=======
-// 5. Track view endpoint
-app.post('/track-view', (req, res) => {
-  try {
-    // Validate input
-    if (!req.body || typeof req.body.animeId !== 'string') {
-      return res.status(400).send('Missing animeId');
-    }
-
-    const { animeId } = req.body;
-    
-    // Update count
-    viewCounts[animeId] = (viewCounts[animeId] || 0) + 1;
-    
-    // Broadcast to all clients
-    wss.clients.forEach(client => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(JSON.stringify({
-          type: 'viewCount',
-          animeId,
-          count: viewCounts[animeId]
-        }));
-      }
-    });
-    
-    res.json({ count: viewCounts[animeId] });
-  } catch (error) {
-    console.log('Server error:', error);
-    res.status(500).send('Server error');
-  }
-});
-
-// 6. Root endpoint
-app.get('/', (req, res) => {
-  res.send('View Counter API is running');
-});
-
-// 7. Start server
-const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
->>>>>>> 453bf59dc489557ed6652eb62beb8c83261ae7cb
