@@ -62,6 +62,7 @@ const ViewCount = mongoose.model('ViewCount', viewCountSchema);
 // Track View
 app.post('/track-view', async (req, res) => {
   const { animeId } = req.body;
+  console.log('📥 Incoming request with animeId:', animeId);
 
   if (!animeId || typeof animeId !== 'string' || animeId.trim().length === 0) {
     return res.status(400).json({ error: 'animeId is required and must be a non-empty string' });
@@ -74,15 +75,21 @@ app.post('/track-view', async (req, res) => {
         $inc: { count: 1 },
         $set: { lastUpdated: new Date() }
       },
-      { new: true, upsert: true }
+      { new: true, upsert: true, setDefaultsOnInsert: true }
     );
 
+    console.log('✅ View updated for:', animeId, 'New count:', result.count);
     res.status(200).json({ success: true, count: result.count });
   } catch (err) {
-    console.error('Error tracking view:', err);
+    console.error('❌ Error tracking view:', {
+      message: err.message,
+      name: err.name,
+      stack: err.stack
+    });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
 
 // Get View Count
 app.get('/view-count/:animeId', async (req, res) => {
