@@ -1,113 +1,107 @@
+require('dotenv').config();
 const express = require('express');
-const mongoose = require('mongoose');
+const WebSocket = require('ws');
+const http = require('http');
 const cors = require('cors');
 
+// Create Express app and HTTP server
 const app = express();
-const PORT = process.env.PORT || 3001;
+const server = http.createServer(app);
 
-// ===== Middleware =====
-// Step 1: Handle preflight OPTIONS requests first
-app.options('*', cors());
-
-// Step 2: Proper CORS setup
-app.use(cors({
-  origin: ['http://localhost:5173', 'https://www.animenova.xyz'],
+// CORS Configuration
+const corsOptions = {
+  origin: [
+    'http://localhost:5173', // Development
+    'https://www.animenova.xyz' // Production
+  ],
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type'],
   credentials: true
-}));
+};
 
-// Step 3: JSON parser
+// Apply middleware
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // Preflight requests
 app.use(express.json());
 
-// ===== MongoDB Connection =====
-const MONGODB_URI = 'mongodb+srv://solankivinubhai971:rk3NzXFgcE0kn2l7@viewcount.duvwdit.mongodb.net/viewCounterDB?retryWrites=true&w=majority&appName=viewCount';
+// WebSocket Server
+const wss = new WebSocket.Server({ server });
+const viewCounts = {};
 
-mongoose.connect(MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-  serverSelectionTimeoutMS: 20000
-}).then(() => {
-  console.log('✅ Connected to MongoDB');
-}).catch((err) => {
-  console.error('❌ MongoDB connection error:', err);
-  process.exit(1);
+wss.on('connection', (ws, req) => {
+  console.log('New WebSocket connection');
+  
+  ws.on('message', (message) => {
+    try {
+      const { animeId, type } = JSON.parse(message);
+      
+      if (type === 'subscribe' && animeId) {
+        // Send current count immediately
+        ws.send(JSON.stringify({
+          type: 'viewCount',
+          animeId,
+          count: viewCounts[animeId] || 0
+        }));
+      }
+    } catch (error) {
+      console.error('Invalid WebSocket message:', error);
+    }
+  });
+
+  ws.on('close', () => {
+    console.log('WebSocket disconnected');
+  });
 });
 
-// ===== Schema + Model =====
-const viewCountSchema = new mongoose.Schema({
-  animeId: {
-    type: String,
-    required: true,
-    unique: true,
-    index: true
-  },
-  count: {
-    type: Number,
-    default: 1,
-    min: 1
-  },
-  lastUpdated: {
-    type: Date,
-    default: Date.now
-  }
-}, { timestamps: true });
-
-const ViewCount = mongoose.model('ViewCount', viewCountSchema);
-
-// ===== Routes =====
-
-// Track View
-app.post('/track-view', async (req, res) => {
-  const { animeId } = req.body;
-  console.log('📥 Incoming request with animeId:', animeId);
-
-  if (!animeId || typeof animeId !== 'string' || animeId.trim().length === 0) {
-    return res.status(400).json({ error: 'animeId is required and must be a non-empty string' });
-  }
-
+// API Endpoints
+app.post('/track-view', (req, res) => {
   try {
-    const result = await ViewCount.findOneAndUpdate(
-      { animeId },
-      {
-        $inc: { count: 1 },
-        $set: { lastUpdated: new Date() }
-      },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
-    );
+    const { animeId } = req.body;
+    
+    if (!animeId || typeof animeId !== 'string') {
+      return res.status(400).json({ error: 'Valid animeId required' });
+    }
 
-    console.log('✅ View updated for:', animeId, 'New count:', result.count);
-    res.status(200).json({ success: true, count: result.count });
-  } catch (err) {
-    console.error('❌ Error tracking view:', err);
+    // Update view count
+    viewCounts[animeId] = (viewCounts[animeId] || 0) + 1;
+    
+    // Broadcast to all subscribers
+    wss.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify({
+          type: 'viewCount',
+          animeId,
+          count: viewCounts[animeId]
+        }));
+      }
+    });
+    
+    res.json({ success: true, count: viewCounts[animeId] });
+  } catch (error) {
+    console.error('Tracking error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Get View Count
-app.get('/view-count/:animeId', async (req, res) => {
-  try {
-    const doc = await ViewCount.findOne({ animeId: req.params.animeId });
-
-    if (!doc) {
-      return res.status(404).json({ count: 0 });
-    }
-
-    res.status(200).json({ count: doc.count });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+app.get('/view-count/:animeId', (req, res) => {
+  const { animeId } = req.params;
+  res.json({ count: viewCounts[animeId] || 0 });
 });
 
-// Root
 app.get('/', (req, res) => {
-  res.status(200).json({
+  res.json({
     status: 'running',
-    message: 'Anime View Counter API'
+    endpoints: {
+      trackView: 'POST /track-view',
+      getCount: 'GET /view-count/:animeId',
+      websocket: 'ws://your-api-url.com'
+    }
   });
 });
 
-// ===== Start Server =====
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+// Start server
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(`WebSocket server running on ws://localhost:${PORT}`);
 });
