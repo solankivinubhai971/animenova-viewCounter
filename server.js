@@ -5,19 +5,30 @@ const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
+// ===== Middleware =====
 app.use(cors({
-  origin: ['http://localhost:5173', 'https://www.animenova.xyz']
+  origin: ['http://localhost:5173', 'https://www.animenova.xyz'],
+  methods: ['GET', 'POST'],
+  credentials: true
 }));
+
+// Optional: manual CORS headers fallback for Render
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  next();
+});
+
 app.use(express.json());
 
-// MongoDB Connection
+// ===== MongoDB Connection =====
 const MONGODB_URI = 'mongodb+srv://solankivinubhai971:rk3NzXFgcE0kn2l7@viewcount.duvwdit.mongodb.net/viewCounterDB?retryWrites=true&w=majority&appName=viewCount';
 
 mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-  serverSelectionTimeoutMS: 20000 // handle slow wake-ups
+  serverSelectionTimeoutMS: 20000
 }).then(() => {
   console.log('✅ Connected to MongoDB');
 }).catch((err) => {
@@ -25,7 +36,7 @@ mongoose.connect(MONGODB_URI, {
   process.exit(1);
 });
 
-// Schema + Model
+// ===== Schema + Model =====
 const viewCountSchema = new mongoose.Schema({
   animeId: {
     type: String,
@@ -46,7 +57,9 @@ const viewCountSchema = new mongoose.Schema({
 
 const ViewCount = mongoose.model('ViewCount', viewCountSchema);
 
-// API: Track View
+// ===== Routes =====
+
+// Track View
 app.post('/track-view', async (req, res) => {
   const { animeId } = req.body;
 
@@ -66,21 +79,21 @@ app.post('/track-view', async (req, res) => {
 
     res.status(200).json({ success: true, count: result.count });
   } catch (err) {
-    console.error('Error tracking view:', err); // log full error
+    console.error('Error tracking view:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// API: Get View Count
+// Get View Count
 app.get('/view-count/:animeId', async (req, res) => {
   try {
     const doc = await ViewCount.findOne({ animeId: req.params.animeId });
 
     if (!doc) {
-      return res.status(404).json({ count: 0 }); // Not found yet
+      return res.status(404).json({ count: 0 });
     }
 
-    res.json({ count: doc.count });
+    res.status(200).json({ count: doc.count });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -88,13 +101,13 @@ app.get('/view-count/:animeId', async (req, res) => {
 
 // Root
 app.get('/', (req, res) => {
-  res.json({
+  res.status(200).json({
     status: 'running',
     message: 'Anime View Counter API'
   });
 });
 
-// Start server
+// ===== Start Server =====
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
