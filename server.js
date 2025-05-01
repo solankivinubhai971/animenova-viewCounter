@@ -10,7 +10,7 @@ const server = http.createServer(app);
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:5173', 'https://your-anime-site.com']
+  origin: ['http://localhost:5173', 'https://www.animenova.xyz']
 }));
 app.use(express.json());
 
