@@ -31,6 +31,12 @@ const viewCounts = {};
 wss.on('connection', (ws, req) => {
   console.log('New WebSocket connection');
   
+  ws.isAlive = true;
+
+  ws.on('pong', () => {
+    ws.isAlive = true;
+  });
+
   ws.on('message', (message) => {
     try {
       const { animeId, type } = JSON.parse(message);
@@ -52,6 +58,15 @@ wss.on('connection', (ws, req) => {
     console.log('WebSocket disconnected');
   });
 });
+
+// Keep WebSocket connections alive
+setInterval(() => {
+  wss.clients.forEach(ws => {
+    if (!ws.isAlive) return ws.terminate(); // Terminate dead connections
+    ws.isAlive = false;  // Reset for the next ping
+    ws.ping(); // Send ping
+  });
+}, 30000); // Every 30 seconds
 
 // API Endpoints
 app.post('/track-view', (req, res) => {
