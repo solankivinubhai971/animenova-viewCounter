@@ -2,15 +2,18 @@ const express = require('express');
 const WebSocket = require('ws');
 const http = require('http');
 
+// 1. Create server
 const app = express();
 const server = http.createServer(app);
 
-// Middleware to parse JSON bodies
-app.use(express.json()); // <-- This must come before your routes
+// 2. Add middleware FIRST
+app.use(express.json());
 
+// 3. Create WebSocket server
 const wss = new WebSocket.Server({ server });
 const viewCounts = {};
 
+// 4. WebSocket connection
 wss.on('connection', (ws) => {
   ws.on('message', (message) => {
     try {
@@ -23,33 +26,25 @@ wss.on('connection', (ws) => {
         }));
       }
     } catch (e) {
-      console.error('Invalid WebSocket message:', e);
+      console.log('Invalid message format');
     }
   });
 });
 
-// Track view endpoint with proper error handling
+// 5. Track view endpoint
 app.post('/track-view', (req, res) => {
   try {
-    // Validate request body
-    if (!req.body || !req.body.animeId) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "Missing animeId in request body" 
-      });
+    // Validate input
+    if (!req.body || typeof req.body.animeId !== 'string') {
+      return res.status(400).send('Missing animeId');
     }
 
     const { animeId } = req.body;
     
-    // Initialize if doesn't exist
-    if (!viewCounts[animeId]) {
-      viewCounts[animeId] = 0;
-    }
+    // Update count
+    viewCounts[animeId] = (viewCounts[animeId] || 0) + 1;
     
-    // Increment count
-    viewCounts[animeId] += 1;
-    
-    // Broadcast update
+    // Broadcast to all clients
     wss.clients.forEach(client => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(JSON.stringify({
@@ -60,14 +55,19 @@ app.post('/track-view', (req, res) => {
       }
     });
     
-    res.json({ success: true, count: viewCounts[animeId] });
-    
+    res.json({ count: viewCounts[animeId] });
   } catch (error) {
-    console.error('Error in track-view:', error);
-    res.status(500).json({ success: false, error: "Internal server error" });
+    console.log('Server error:', error);
+    res.status(500).send('Server error');
   }
 });
 
+// 6. Root endpoint
+app.get('/', (req, res) => {
+  res.send('View Counter API is running');
+});
+
+// 7. Start server
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
