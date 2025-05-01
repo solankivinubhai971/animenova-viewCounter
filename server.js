@@ -46,9 +46,20 @@ const viewCountSchema = new mongoose.Schema({
 
 const ViewCount = mongoose.model('ViewCount', viewCountSchema);
 
+<<<<<<< HEAD
 // API: Track View
 app.post('/track-view', async (req, res) => {
   const { animeId } = req.body;
+=======
+app.post('/track-view', async (req, res) => {
+  try {
+    const { animeId } = req.body;
+
+    // Validate input
+    if (!animeId || typeof animeId !== 'string' || animeId.trim().length === 0) {
+      return res.status(400).json({ error: 'Invalid animeId' });
+    }
+>>>>>>> 2ed82396d810a00c09a2c12f8d940d1f74d70cc2
 
   if (!animeId || typeof animeId !== 'string' || animeId.trim().length === 0) {
     return res.status(400).json({ error: 'animeId is required and must be a non-empty string' });
@@ -64,14 +75,37 @@ app.post('/track-view', async (req, res) => {
       { new: true, upsert: true }
     );
 
+<<<<<<< HEAD
     res.status(200).json({ success: true, count: result.count });
   } catch (err) {
     console.error('Error tracking view:', err); // log full error
+=======
+    // Broadcast WebSocket update if subscribed
+    if (activeSubscriptions.has(animeId)) {
+      const message = JSON.stringify({
+        type: 'viewCount',
+        animeId,
+        count: result.count
+      });
+      activeSubscriptions.get(animeId).forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(message);
+        }
+      });
+    }
+
+    res.json({ success: true, count: result.count });
+  } catch (err) {
+    console.error('Tracking error:', err); // See the real error here in your Render logs
+>>>>>>> 2ed82396d810a00c09a2c12f8d940d1f74d70cc2
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> 2ed82396d810a00c09a2c12f8d940d1f74d70cc2
 // API: Get View Count
 app.get('/view-count/:animeId', async (req, res) => {
   try {
