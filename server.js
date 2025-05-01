@@ -168,8 +168,3 @@ server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`WebSocket running on http://localhost:${PORT}`);
 });
-
-// Ensure DB indexes exist
-ViewCount.createIndexes()
-  .then(() => console.log('Database indexes created'))
-  .catch(err => console.error('Index creation error:', err));
