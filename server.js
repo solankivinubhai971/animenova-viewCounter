@@ -46,27 +46,38 @@ const viewCountSchema = new mongoose.Schema({
 
 const ViewCount = mongoose.model('ViewCount', viewCountSchema);
 
-// API: Track View
 app.post('/track-view', async (req, res) => {
-  const { animeId } = req.body;
-
-  if (!animeId || typeof animeId !== 'string') {
-    return res.status(400).json({ error: 'animeId is required and must be a string' });
-  }
-
   try {
+    const { animeId } = req.body;
+
+    // Validate input
+    if (!animeId || typeof animeId !== 'string' || animeId.trim().length === 0) {
+      return res.status(400).json({ error: 'Invalid animeId' });
+    }
+
     const result = await ViewCount.findOneAndUpdate(
       { animeId },
-      {
-        $inc: { count: 1 },
-        $set: { lastUpdated: new Date() }
-      },
+      { $inc: { count: 1 }, $set: { lastUpdated: new Date() } },
       { new: true, upsert: true }
     );
 
+    // Broadcast WebSocket update if subscribed
+    if (activeSubscriptions.has(animeId)) {
+      const message = JSON.stringify({
+        type: 'viewCount',
+        animeId,
+        count: result.count
+      });
+      activeSubscriptions.get(animeId).forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(message);
+        }
+      });
+    }
+
     res.json({ success: true, count: result.count });
   } catch (err) {
-    console.error('Error tracking view:', err.message);
+    console.error('Tracking error:', err); // See the real error here in your Render logs
     res.status(500).json({ error: 'Internal server error' });
   }
 });
