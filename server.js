@@ -12,7 +12,7 @@ const server = http.createServer(app);
 const corsOptions = {
   origin: [
     'http://localhost:5173', // Development
-    'https://your-anime-site.com' // Production
+    'https://www.animenova.xyz' // Production
   ],
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type'],
