@@ -6,20 +6,18 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // ===== Middleware =====
+// Step 1: Handle preflight OPTIONS requests first
+app.options('*', cors());
+
+// Step 2: Proper CORS setup
 app.use(cors({
   origin: ['http://localhost:5173', 'https://www.animenova.xyz'],
-  methods: ['GET', 'POST'],
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type'],
   credentials: true
 }));
 
-// Optional: manual CORS headers fallback for Render
-app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  next();
-});
-
+// Step 3: JSON parser
 app.use(express.json());
 
 // ===== MongoDB Connection =====
@@ -81,15 +79,10 @@ app.post('/track-view', async (req, res) => {
     console.log('✅ View updated for:', animeId, 'New count:', result.count);
     res.status(200).json({ success: true, count: result.count });
   } catch (err) {
-    console.error('❌ Error tracking view:', {
-      message: err.message,
-      name: err.name,
-      stack: err.stack
-    });
+    console.error('❌ Error tracking view:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
 
 // Get View Count
 app.get('/view-count/:animeId', async (req, res) => {
