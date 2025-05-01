@@ -1,12 +1,9 @@
 const express = require('express');
-const WebSocket = require('ws');
-const http = require('http');
-const cors = require('cors');
 const mongoose = require('mongoose');
+const cors = require('cors');
 
-// Initialize app
 const app = express();
-const server = http.createServer(app);
+const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors({
@@ -14,144 +11,91 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Hardcoded MongoDB Connection (⚠️ Only for development)
+// MongoDB Connection
 const MONGODB_URI = 'mongodb+srv://solankivinubhai971:rk3NzXFgcE0kn2l7@viewcount.duvwdit.mongodb.net/viewCounterDB?retryWrites=true&w=majority&appName=viewCount';
 
-mongoose.connect(MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB Atlas'))
-  .catch(err => {
-    console.error('MongoDB connection error:', err);
-    process.exit(1);
-  });
+mongoose.connect(MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 20000 // handle slow wake-ups
+}).then(() => {
+  console.log('✅ Connected to MongoDB');
+}).catch((err) => {
+  console.error('❌ MongoDB connection error:', err);
+  process.exit(1);
+});
 
-// Schema and Model
+// Schema + Model
 const viewCountSchema = new mongoose.Schema({
-  animeId: { 
-    type: String, 
-    required: true, 
+  animeId: {
+    type: String,
+    required: true,
     unique: true,
-    index: true 
+    index: true
   },
-  count: { 
-    type: Number, 
-    default: 0,
-    min: 0 
+  count: {
+    type: Number,
+    default: 1,
+    min: 1
   },
-  lastUpdated: { 
-    type: Date, 
-    default: Date.now 
+  lastUpdated: {
+    type: Date,
+    default: Date.now
   }
 }, { timestamps: true });
 
 const ViewCount = mongoose.model('ViewCount', viewCountSchema);
 
-// WebSocket Server
-const wss = new WebSocket.Server({ server });
-const activeSubscriptions = new Map();
-
-wss.on('connection', (ws) => {
-  console.log('New WebSocket connection');
-  
-  ws.on('message', async (message) => {
-    try {
-      const { animeId, type } = JSON.parse(message);
-      
-      if (type === 'subscribe' && animeId) {
-        // Add to subscriptions
-        if (!activeSubscriptions.has(animeId)) {
-          activeSubscriptions.set(animeId, new Set());
-        }
-        activeSubscriptions.get(animeId).add(ws);
-        
-        // Send current count
-        const doc = await ViewCount.findOne({ animeId }) || 
-                   await ViewCount.create({ animeId });
-        ws.send(JSON.stringify({
-          type: 'viewCount',
-          animeId,
-          count: doc.count
-        }));
-      }
-    } catch (err) {
-      console.error('WS message error:', err);
-    }
-  });
-
-  ws.on('close', () => {
-    activeSubscriptions.forEach((sockets, animeId) => {
-      sockets.delete(ws);
-      if (sockets.size === 0) {
-        activeSubscriptions.delete(animeId);
-      }
-    });
-  });
-});
-
-// API Endpoints
+// API: Track View
 app.post('/track-view', async (req, res) => {
-  try {
-    const { animeId } = req.body;
-    
-    if (!animeId || typeof animeId !== 'string') {
-      return res.status(400).json({ error: 'Valid animeId required' });
-    }
+  const { animeId } = req.body;
 
+  if (!animeId || typeof animeId !== 'string' || animeId.trim().length === 0) {
+    return res.status(400).json({ error: 'animeId is required and must be a non-empty string' });
+  }
+
+  try {
     const result = await ViewCount.findOneAndUpdate(
       { animeId },
-      { $inc: { count: 1 }, $set: { lastUpdated: new Date() } },
+      {
+        $inc: { count: 1 },
+        $set: { lastUpdated: new Date() }
+      },
       { new: true, upsert: true }
     );
 
-    // Broadcast update
-    if (activeSubscriptions.has(animeId)) {
-      const message = JSON.stringify({
-        type: 'viewCount',
-        animeId,
-        count: result.count
-      });
-      activeSubscriptions.get(animeId).forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(message);
-        }
-      });
-    }
-
-    res.json({ success: true, count: result.count });
+    res.status(200).json({ success: true, count: result.count });
   } catch (err) {
-    console.error('Tracking error:', err);
+    console.error('Error tracking view:', err); // log full error
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
+
+// API: Get View Count
 app.get('/view-count/:animeId', async (req, res) => {
   try {
     const doc = await ViewCount.findOne({ animeId: req.params.animeId });
-    res.json({ count: doc?.count || 0 });
+
+    if (!doc) {
+      return res.status(404).json({ count: 0 }); // Not found yet
+    }
+
+    res.json({ count: doc.count });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Root endpoint
+// Root
 app.get('/', (req, res) => {
-  res.json({ 
+  res.json({
     status: 'running',
-    message: 'Anime View Counter API',
-    stats: {
-      activeConnections: wss.clients.size,
-      subscribedAnime: activeSubscriptions.size
-    }
+    message: 'Anime View Counter API'
   });
 });
 
 // Start server
-const PORT = 3001;
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`WebSocket running on ws://localhost:${PORT}`);
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
-
-// Create indexes on startup
-ViewCount.createIndexes()
-  .then(() => console.log('Database indexes created'))
-  .catch(err => console.error('Index creation error:', err));
